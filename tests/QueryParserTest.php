@@ -36,7 +36,7 @@ final class QueryParserTest extends TestCase
 
 	public function testBindsTypedValuesInIql() : void
 	{
-		$query = ($this->parser)->parse('READ FROM "sales" WHERE amount >= :minimum AND active = :active', [
+		$query = $this->parser->parse('READ FROM "sales" WHERE amount >= :minimum AND active = :active', [
 			'minimum' => 10,
 			'active' => true,
 		]);

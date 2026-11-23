@@ -273,7 +273,7 @@ final class DataConnector
 	{
 		try {
 			$this->logger->error($message);
-        } catch (Throwable) {
+		} catch (Throwable) {
 			// Logging failures must not replace the original query error.
 		}
 	}

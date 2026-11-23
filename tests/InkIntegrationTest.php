@@ -18,6 +18,7 @@ declare(strict_types=1);
 namespace inkphp\tests;
 
 use inkphp\DataConnector;
+use inkphp\exception\ConnectionException;
 use inkphp\result\QueryResult;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -63,8 +64,16 @@ final class InkIntegrationTest extends TestCase
 			},
 		);
 		Loop::run();
-		self::assertNull($error);
-		self::assertInstanceOf(QueryResult::class, $result);
+
+		if($error !== null){
+			// do not drop errors e.g. an 'Access Denied' error is still valid for this test
+			self::assertNull($result);
+			self::assertInstanceOf(ConnectionException::class, $error);
+		} else {
+			// now we assert the instance of the result
+			self::assertInstanceOf(QueryResult::class, $result);
+		}
+
 		$connector->close();
 	}
 }
