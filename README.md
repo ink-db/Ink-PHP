@@ -8,7 +8,7 @@ Asynchronous PHP connector for Ink over TCP using IWP/1.0. Network I/O runs thro
 - Composer
 - PHP extensions `json`, `sodium`, and `blake3`
 
-The BLAKE3 extension is available at [ink-db/ext-blake3](https://github.com/ink-db/ext-blake3). This connector uses the `blake3` algorithm through PHP's `hash()` API.
+The BLAKE3 extension is available at [ink-db/ext-blake3](https://github.com/ink-db/ext-blake3).
 
 ## Run Ink
 
