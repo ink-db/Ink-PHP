@@ -1,0 +1,9 @@
+parameters:
+  level: max
+  paths:
+    - src
+    - tests
+  scanFiles:
+    - stubs/ext-blake3.stub.php
+  tmpDir: .phpstan-cache
+  treatPhpDocTypesAsCertain: true

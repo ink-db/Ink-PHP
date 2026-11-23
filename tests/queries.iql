@@ -1,0 +1,14 @@
+-- #{ users
+-- #    { append
+APPEND TO "users" {"name": :name}
+-- #    }
+-- #    { active
+READ FROM "users" WHERE active = :active
+-- #    }
+-- #    { correct
+CORRECT record #1 WITH {"name": :name}, reason: "typo"
+-- #    }
+-- #}
+-- #{ maintenance.tables
+TABLES
+-- #}

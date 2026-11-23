@@ -1,0 +1,11 @@
+-- #{ sales
+-- #    { append
+APPEND TO "sales" {"customer": :customer, "amount": :amount}
+-- #    }
+-- #    { list
+READ FROM "sales" WHERE amount >= :minimum
+-- #    }
+-- #}
+-- #{ maintenance.tables
+TABLES
+-- #}
