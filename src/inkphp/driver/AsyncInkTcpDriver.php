@@ -24,7 +24,6 @@ use inkphp\result\AppendResult;
 use inkphp\result\QueryResult;
 use inkphp\utils\IwpUtils;
 use pocketmine\errorhandler\ErrorToExceptionHandler;
-use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
 use React\Promise\Deferred;
 use React\Promise\PromiseInterface;
@@ -73,8 +72,8 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 	private array $pending = [];
 
 	public function __construct(
-		private readonly ?LoopInterface $loop = null,
-		private readonly ?ConnectorInterface $connector = null,
+		private readonly LoopInterface $loop,
+		private ?ConnectorInterface $connector = null,
 	) {
 	}
 
@@ -100,14 +99,14 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 		/** @var Deferred<bool> $deferred */
 		$deferred = new Deferred();
 		$this->connectDeferred = $deferred;
-		$loop = $this->loop ?? Loop::get();
-		$connector = $this->connector ?? new Connector(['timeout' => $connectTimeout], $loop);
+		$loop = $this->loop;
+		$connector = $this->connector ??= new Connector(['timeout' => $connectTimeout], $loop);
 		$connector->connect(sprintf('tcp://%s:%d', $host, $port))->then(
 			function (ConnectionInterface $connection) : void {
 				$this->connection = $connection;
-				$connection->on('data', fn (string $data) => $this->onData($data));
+				$connection->on('data', $this->onData(...));
 				$connection->on('error', fn (Throwable $error) => $this->failAll(new ConnectionException('Ink TCP connection failed: ' . $error->getMessage(), 0, $error)));
-				$connection->on('close', fn () => $this->onClose());
+				$connection->on('close', $this->onClose(...));
 				$this->writeFrame(0x01, 0, $this->publicKey . pack('vV', 1, 0));
 			},
 			function (Throwable $error) use ($deferred) : void {
@@ -116,6 +115,16 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 			},
 		);
 		return $deferred->promise();
+	}
+
+	public function getConnector() : ?ConnectorInterface
+	{
+		return $this->connector;
+	}
+
+	public function getConnection() : ?ConnectionInterface
+	{
+		return $this->connection;
 	}
 
 	/** @return PromiseInterface<QueryResult|AppendResult> */
@@ -145,7 +154,7 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 		$streamId = $this->allocateStreamId();
 		try {
 			$json = json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-		strlen($table) <= 65535 || throw new ConnectionException('Ink table name exceeds the IWP maximum length.');
+			strlen($table) <= 65535 || throw new ConnectionException('Ink table name exceeds the IWP maximum length.');
 			$this->pending[$streamId] = ['kind' => 'append-challenge', 'deferred' => $deferred, 'columns' => [], 'rows' => [], 'count' => 0, 'time' => 0];
 			$this->writeFrame(0x15, $streamId, pack('v', strlen($table)) . $table . pack('V', strlen($json)) . $json);
 		} catch (Throwable $error) {

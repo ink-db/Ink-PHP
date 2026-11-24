@@ -18,7 +18,6 @@ declare(strict_types=1);
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 use inkphp\DataConnector;
-use React\EventLoop\Loop;
 
 $database = new DataConnector();
 $database->loadQueries(__DIR__ . '/queries.iql');
@@ -35,15 +34,9 @@ $database->connect('127.0.0.1', 7777, __DIR__ . '/alice.key')->then(
 		},
 	),
 )->then(
-	static function () use ($database) : void {
-		$database->close();
-		Loop::stop();
-	},
+	$database->close(...),
 	static function (Throwable $error) use ($database) : void {
 		fprintf(STDERR, "Ink operation failed: %s\n", $error->getMessage());
 		$database->close();
-		Loop::stop();
 	},
 );
-
-Loop::run();

@@ -30,6 +30,7 @@ use inkphp\query\QueryFileBlock;
 use inkphp\result\AppendResult;
 use inkphp\result\QueryResult;
 use pocketmine\errorhandler\ErrorToExceptionHandler;
+use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
 use React\Promise\PromiseInterface;
 use Throwable;
@@ -55,6 +56,7 @@ final class DataConnector
 	private readonly AsyncDriverInterface $driver;
 	private readonly QueryParserInterface $parser;
 	private readonly LoggerInterface $logger;
+	private readonly LoopInterface $loop;
 
 	/** @var array<string, string> */
 	private array $queries = [];
@@ -67,7 +69,9 @@ final class DataConnector
 		?LoggerInterface $logger = null,
 		?LoopInterface $loop = null,
 	) {
-		$this->driver = $driver ?? new AsyncInkTcpDriver($loop);
+
+		$this->loop = $loop ?? Loop::get();
+		$this->driver = $driver ?? new AsyncInkTcpDriver($this->loop);
 		$this->parser = $parser ?? new IqlParser();
 		$this->logger = $logger ?? new NoopLogger();
 	}
@@ -80,11 +84,13 @@ final class DataConnector
 		}
 		return $this->driver->connect($host, $port, $privateKeyPath, $connectTimeout)->then(function () : void {
 			$this->connected = true;
+			$this->loop->run();
 		});
 	}
 
 	public function close() : void {
 		$this->driver->close();
+		$this->loop->stop();
 		$this->connected = false;
 	}
 
