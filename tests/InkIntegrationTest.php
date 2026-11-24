@@ -19,6 +19,7 @@ namespace inkphp\tests;
 
 use inkphp\DataConnector;
 use inkphp\exception\ConnectionException;
+use inkphp\result\AppendResult;
 use inkphp\result\QueryResult;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -46,18 +47,20 @@ final class InkIntegrationTest extends TestCase
 		$error = null;
 
 		$connector->connect($host, $port, $keyPath)->then(
-			static fn () => $connector->executeSelect('maintenance.tables')->then(
-				static function (QueryResult $value) use (&$result, $connector) : void {
-					$result = $value;
-					$connector->close();
-					Loop::stop();
-				},
-				static function (Throwable $reason) use (&$error, $connector) : void {
-					$error = $reason;
-					$connector->close();
-					Loop::stop();
-				},
-			),
+			static function () use ($connector, &$result, &$error) {
+				return $connector->executeGeneric('maintenance.tables')->then(
+					static function (QueryResult|AppendResult $value) use (&$result, $connector) : void {
+						$result = $value;
+						$connector->close();
+						Loop::stop();
+					},
+					static function (Throwable $reason) use (&$error, $connector) : void {
+						$error = $reason;
+						$connector->close();
+						Loop::stop();
+					},
+				);
+			},
 			static function (Throwable $reason) use (&$error) : void {
 				$error = $reason;
 				Loop::stop();
@@ -65,10 +68,10 @@ final class InkIntegrationTest extends TestCase
 		);
 		Loop::run();
 
-		if($error !== null){
+		if ($error !== null) {
 			// do not drop errors e.g. an 'Access Denied' error is still valid for this test
-			self::assertNull($result);
 			self::assertInstanceOf(ConnectionException::class, $error);
+			self::assertStringContainsString('Access denied', $error->getMessage());
 		} else {
 			// now we assert the instance of the result
 			self::assertInstanceOf(QueryResult::class, $result);

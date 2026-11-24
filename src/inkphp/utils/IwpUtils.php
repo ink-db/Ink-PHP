@@ -47,7 +47,7 @@ final class IwpUtils
 	{
 		$header = 'INK' . chr(1) . chr($type) . "\0" . pack('V2', $streamId, strlen($payload));
 		$header .= pack('V', self::crc32($header));
-		return $header . $payload . hash('crc32b', $payload, true);
+		return $header . $payload . pack('V', self::crc32($payload)); // what the flip
 	}
 
 	public static function blake3(string $input) : string
