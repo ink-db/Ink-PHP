@@ -110,6 +110,14 @@ final class DataConnector
 		}
 	}
 
+    /**
+     * @return LoopInterface
+     */
+    public function getLoop(): LoopInterface
+    {
+        return $this->loop;
+    }
+
 	/**
 	 * @param array<string, mixed> $arguments
 	 * @return PromiseInterface<QueryResult|AppendResult>
