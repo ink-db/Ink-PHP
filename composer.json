@@ -7,18 +7,12 @@
     "php": ">=8.2",
     "ext-json": "*",
     "ext-sodium": "*",
-    "ink/ext-blake3": "dev-stable",
+    "ext-blake3": "*",
     "pocketmine/errorhandler": ">=7",
     "react/event-loop": "^1.5",
     "react/promise": "^3.2",
     "react/socket": "^1.17"
   },
-  "repositories": [
-    {
-      "type": "vcs",
-      "url": "https://github.com/ink-db/ext-blake3.git"
-    }
-  ],
   "require-dev": {
     "friendsofphp/php-cs-fixer": "^3.0",
     "phpstan/phpstan": "^2.0",
