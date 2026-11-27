@@ -19,12 +19,13 @@ namespace inkphp\contracts;
 
 use inkphp\result\AppendResult;
 use inkphp\result\QueryResult;
+use inkphp\utils\InkCodes;
 use React\Promise\PromiseInterface;
 
 interface AsyncDriverInterface
 {
 	/** @return PromiseInterface<bool> */
-	public function connect(string $host, int $port, string $privateKeyPath, float $connectTimeout = 5.0) : PromiseInterface;
+	public function connect(string $host, int $port, string $privateKeyPath, float $connectTimeout = InkCodes::DEFAULT_CONNECT_TIMEOUT) : PromiseInterface;
 
 	/** @return PromiseInterface<QueryResult|AppendResult> */
 	public function query(string $iql) : PromiseInterface;

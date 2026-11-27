@@ -29,6 +29,7 @@ use inkphp\query\IqlParser;
 use inkphp\query\QueryFileBlock;
 use inkphp\result\AppendResult;
 use inkphp\result\QueryResult;
+use inkphp\utils\InkCodes;
 use pocketmine\errorhandler\ErrorToExceptionHandler;
 use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
@@ -77,7 +78,7 @@ final class DataConnector
 	}
 
 	/** @return PromiseInterface<void> */
-	public function connect(string $host, int $port, string $privateKeyPath, float $connectTimeout = 5.0) : PromiseInterface
+	public function connect(string $host, int $port, string $privateKeyPath, float $connectTimeout = InkCodes::DEFAULT_CONNECT_TIMEOUT) : PromiseInterface
 	{
 		if ($this->connected) {
 			return reject(new ConnectionException('DataConnector is already connected; close it before connecting again.'));
@@ -110,13 +111,10 @@ final class DataConnector
 		}
 	}
 
-    /**
-     * @return LoopInterface
-     */
-    public function getLoop(): LoopInterface
-    {
-        return $this->loop;
-    }
+	public function getLoop() : LoopInterface
+	{
+		return $this->loop;
+	}
 
 	/**
 	 * @param array<string, mixed> $arguments

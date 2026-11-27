@@ -8,7 +8,7 @@
     "ext-json": "*",
     "ext-sodium": "*",
     "ext-blake3": "*",
-    "pocketmine/errorhandler": ">=7",
+    "pocketmine/errorhandler": "dev-master",
     "react/event-loop": "^1.5",
     "react/promise": "^3.2",
     "react/socket": "^1.17"

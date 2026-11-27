@@ -45,9 +45,9 @@ final class IwpUtils
 
 	public static function encodeFrame(int $type, int $streamId, string $payload) : string
 	{
-		$header = 'INK' . chr(1) . chr($type) . "\0" . pack('V2', $streamId, strlen($payload));
+		$header = InkCodes::MAGIC . chr(InkCodes::PROTOCOL_VERSION) . chr($type) . chr(InkCodes::FLAG_NONE) . pack('V2', $streamId, strlen($payload));
 		$header .= pack('V', self::crc32($header));
-		return $header . $payload . pack('V', self::crc32($payload)); // what the flip
+		return $header . $payload . pack('V', self::crc32($payload));
 	}
 
 	public static function blake3(string $input) : string
@@ -85,24 +85,24 @@ final class IwpUtils
 
 	public static function remoteError(string $payload) : ConnectionException
 	{
-		if (strlen($payload) < 4) {
+		if (strlen($payload) < InkCodes::ERROR_MIN_PAYLOAD_SIZE) {
 			return new ConnectionException('Ink returned an incomplete error response.');
 		}
 		$code = self::uint16($payload, 0);
 		$length = self::uint16($payload, 2);
-		return new ConnectionException('Ink error ' . $code . ': ' . substr($payload, 4, $length));
+		return new ConnectionException('Ink error ' . $code . ': ' . substr($payload, InkCodes::ERROR_MIN_PAYLOAD_SIZE, $length));
 	}
 
 	/** @return list<string> */
 	public static function decodeColumns(string $payload) : array
 	{
-		strlen($payload) >= 2 || throw new ProtocolException('Ink returned an incomplete column header.');
+		strlen($payload) >= InkCodes::COLUMN_HEADER_MIN_SIZE || throw new ProtocolException('Ink returned an incomplete column header.');
 		$count = self::uint16($payload, 0);
-		$offset = 2;
+		$offset = InkCodes::COLUMN_HEADER_MIN_SIZE;
 		$columns = [];
 		for ($i = 0; $i < $count; $i++) {
 			$length = self::uint16($payload, $offset);
-			$offset += 2;
+			$offset += InkCodes::COLUMN_HEADER_MIN_SIZE;
 			strlen($payload) >= $offset + $length || throw new ProtocolException('Ink returned a truncated column name.');
 			$columns[] = substr($payload, $offset, $length);
 			$offset += $length;
@@ -113,11 +113,11 @@ final class IwpUtils
 	/** @return array<string, mixed> */
 	public static function decodeRow(string $payload) : array
 	{
-		strlen($payload) >= 12 || throw new ProtocolException('Ink returned a truncated row.');
+		strlen($payload) >= InkCodes::ROW_HEADER_SIZE || throw new ProtocolException('Ink returned a truncated row.');
 		$length = self::uint32($payload, 8);
-		strlen($payload) >= 12 + $length || throw new ProtocolException('Ink returned a truncated row JSON payload.');
+		strlen($payload) >= InkCodes::ROW_HEADER_SIZE + $length || throw new ProtocolException('Ink returned a truncated row JSON payload.');
 		try {
-			$row = json_decode(substr($payload, 12, $length), false, 512, JSON_THROW_ON_ERROR);
+			$row = json_decode(substr($payload, InkCodes::ROW_HEADER_SIZE, $length), false, InkCodes::JSON_MAX_DEPTH, JSON_THROW_ON_ERROR);
 		} catch (JsonException $error) {
 			throw new ProtocolException('Ink returned invalid JSON in a row.', 0, $error);
 		}

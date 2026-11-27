@@ -22,6 +22,7 @@ use inkphp\exception\ConnectionException;
 use inkphp\exception\ProtocolException;
 use inkphp\result\AppendResult;
 use inkphp\result\QueryResult;
+use inkphp\utils\InkCodes;
 use inkphp\utils\IwpUtils;
 use pocketmine\errorhandler\ErrorToExceptionHandler;
 use React\EventLoop\LoopInterface;
@@ -78,13 +79,13 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 	}
 
 	/** @return PromiseInterface<bool> */
-	public function connect(string $host, int $port, string $privateKeyPath, float $connectTimeout = 5.0) : PromiseInterface
+	public function connect(string $host, int $port, string $privateKeyPath, float $connectTimeout = InkCodes::DEFAULT_CONNECT_TIMEOUT) : PromiseInterface
 	{
 		if ($this->connection !== null || $this->connectDeferred !== null) {
 			return reject(new ConnectionException('AsyncInkTcpDriver is already connecting or connected.'));
 		}
-		if ($port < 1 || $port > 65535) {
-			return reject(new ConnectionException('Ink TCP port must be between 1 and 65535.'));
+		if ($port < InkCodes::MIN_PORT || $port > InkCodes::MAX_PORT) {
+			return reject(new ConnectionException('Ink TCP port must be between ' . InkCodes::MIN_PORT . ' and ' . InkCodes::MAX_PORT . '.'));
 		}
 		if ($privateKeyPath === '' || !is_file($privateKeyPath)) {
 			return reject(new ConnectionException('The private key path must point to an Ink private key file.'));
@@ -107,7 +108,7 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 				$connection->on('data', $this->onData(...));
 				$connection->on('error', fn (Throwable $error) => $this->failAll(new ConnectionException('Ink TCP connection failed: ' . $error->getMessage(), 0, $error)));
 				$connection->on('close', $this->onClose(...));
-				$this->writeFrame(0x01, 0, $this->publicKey . pack('vV', 1, 0));
+				$this->writeFrame(InkCodes::FRAME_HELLO_REQ, InkCodes::HANDSHAKE_STREAM_ID, $this->publicKey . pack('vV', InkCodes::PROTOCOL_VERSION, InkCodes::DEFAULT_CAPABILITIES));
 			},
 			function (Throwable $error) use ($deferred) : void {
 				$this->connectDeferred = null;
@@ -135,7 +136,7 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 		$streamId = $this->allocateStreamId();
 		$this->pending[$streamId] = ['kind' => 'query', 'deferred' => $deferred, 'columns' => [], 'rows' => [], 'count' => 0, 'time' => 0];
 		try {
-			$this->writeFrame(0x10, $streamId, pack('V', strlen($iql)) . $iql);
+			$this->writeFrame(InkCodes::FRAME_QUERY_REQ, $streamId, pack('V', strlen($iql)) . $iql);
 		} catch (Throwable $error) {
 			unset($this->pending[$streamId]);
 			$deferred->reject($error);
@@ -154,9 +155,9 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 		$streamId = $this->allocateStreamId();
 		try {
 			$json = json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-			strlen($table) <= 65535 || throw new ConnectionException('Ink table name exceeds the IWP maximum length.');
+			strlen($table) <= InkCodes::MAX_TABLE_NAME_LENGTH || throw new ConnectionException('Ink table name exceeds the IWP maximum length.');
 			$this->pending[$streamId] = ['kind' => 'append-challenge', 'deferred' => $deferred, 'columns' => [], 'rows' => [], 'count' => 0, 'time' => 0];
-			$this->writeFrame(0x15, $streamId, pack('v', strlen($table)) . $table . pack('V', strlen($json)) . $json);
+			$this->writeFrame(InkCodes::FRAME_APPEND_INIT, $streamId, pack('v', strlen($table)) . $table . pack('V', strlen($json)) . $json);
 		} catch (Throwable $error) {
 			unset($this->pending[$streamId]);
 			$deferred->reject($error);
@@ -180,11 +181,11 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 	{
 		$this->readBuffer .= $data;
 		try {
-			while (strlen($this->readBuffer) >= 18) {
-				$header = substr($this->readBuffer, 0, 18);
-				$length = IwpUtils::uint32($header, 10);
-				$length <= 67_108_864 || throw new ProtocolException('Ink frame exceeds the 64 MiB protocol limit.');
-				$frameLength = 18 + $length + 4;
+			while (strlen($this->readBuffer) >= InkCodes::HEADER_SIZE) {
+				$header = substr($this->readBuffer, 0, InkCodes::HEADER_SIZE);
+				$length = IwpUtils::uint32($header, InkCodes::HEADER_PAYLOAD_LEN_OFFSET);
+				$length <= InkCodes::MAX_PAYLOAD_SIZE || throw new ProtocolException('Ink frame exceeds the 64 MiB protocol limit.');
+				$frameLength = InkCodes::HEADER_SIZE + $length + InkCodes::TRAILER_SIZE;
 				if (strlen($this->readBuffer) < $frameLength) {
 					return;
 				}
@@ -200,14 +201,14 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 
 	private function handleFrame(string $frame) : void
 	{
-		$header = substr($frame, 0, 18);
-		str_starts_with($header, 'INK') && ord($header[3]) === 1 || throw new ProtocolException('Ink returned a frame with invalid magic or protocol version.');
-		IwpUtils::uint32($header, 14) === IwpUtils::crc32($header, 0, 14) || throw new ProtocolException('Ink frame header checksum failed.');
-		$type = ord($header[4]);
-		$streamId = IwpUtils::uint32($header, 6);
-		$length = IwpUtils::uint32($header, 10);
-		$payload = substr($frame, 18, $length);
-		IwpUtils::uint32($frame, 18 + $length) === IwpUtils::crc32($payload) || throw new ProtocolException('Ink frame payload checksum failed.');
+		$header = substr($frame, 0, InkCodes::HEADER_SIZE);
+		str_starts_with($header, InkCodes::MAGIC) && ord($header[InkCodes::HEADER_VERSION_OFFSET]) === InkCodes::PROTOCOL_VERSION || throw new ProtocolException('Ink returned a frame with invalid magic or protocol version.');
+		IwpUtils::uint32($header, InkCodes::HEADER_CRC_OFFSET) === IwpUtils::crc32($header, 0, InkCodes::HEADER_CRC_OFFSET) || throw new ProtocolException('Ink frame header checksum failed.');
+		$type = ord($header[InkCodes::HEADER_TYPE_OFFSET]);
+		$streamId = IwpUtils::uint32($header, InkCodes::HEADER_STREAM_ID_OFFSET);
+		$length = IwpUtils::uint32($header, InkCodes::HEADER_PAYLOAD_LEN_OFFSET);
+		$payload = substr($frame, InkCodes::HEADER_SIZE, $length);
+		IwpUtils::uint32($frame, InkCodes::HEADER_SIZE + $length) === IwpUtils::crc32($payload) || throw new ProtocolException('Ink frame payload checksum failed.');
 
 		if (!$this->authenticated) {
 			$this->handleAuthenticationFrame($type, $payload);
@@ -216,30 +217,30 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 		if (!isset($this->pending[$streamId])) {
 			return;
 		}
-		if ($type === 0x05) {
+		if ($type === InkCodes::FRAME_AUTH_FAIL) {
 			$this->rejectStream($streamId, IwpUtils::remoteError($payload));
 			return;
 		}
 
 		$request = &$this->pending[$streamId];
-		if ($request['kind'] === 'append-challenge' && $type === 0x16) {
-			strlen($payload) >= 68 || throw new ProtocolException('Ink returned an invalid append challenge.');
-			$lease = substr($payload, 0, 16);
-			$recordId = IwpUtils::uint64($payload, 16);
-			$timestamp = IwpUtils::uint64($payload, 24);
-			$hash = substr($payload, 32, 32);
+		if ($request['kind'] === 'append-challenge' && $type === InkCodes::FRAME_APPEND_CHALLENGE) {
+			strlen($payload) >= InkCodes::APPEND_CHALLENGE_MIN_SIZE || throw new ProtocolException('Ink returned an invalid append challenge.');
+			$lease = substr($payload, 0, InkCodes::LEASE_SIZE);
+			$recordId = IwpUtils::uint64($payload, InkCodes::LEASE_SIZE);
+			$timestamp = IwpUtils::uint64($payload, InkCodes::LEASE_SIZE + 8);
+			$hash = substr($payload, InkCodes::LEASE_SIZE + 16, InkCodes::RECORD_HASH_SIZE);
 			$request['kind'] = 'append-commit';
 			$request['append'] = ['recordId' => $recordId, 'hash' => bin2hex($hash), 'timestamp' => $timestamp];
-			$this->writeFrame(0x17, $streamId, $lease . sodium_crypto_sign_detached($hash, $this->secretKey()));
-		} elseif ($request['kind'] === 'query' && $type === 0x11) {
+			$this->writeFrame(InkCodes::FRAME_APPEND_COMMIT, $streamId, $lease . sodium_crypto_sign_detached($hash, $this->secretKey()));
+		} elseif ($request['kind'] === 'query' && $type === InkCodes::FRAME_ROW_HEADER) {
 			$request['columns'] = IwpUtils::decodeColumns($payload);
-		} elseif ($type === 0x12) {
+		} elseif ($type === InkCodes::FRAME_ROW_DATA) {
 			if ($request['kind'] === 'query') {
 				$request['rows'][] = IwpUtils::decodeRow($payload);
 			}
-		} elseif ($type === 0x13) {
+		} elseif ($type === InkCodes::FRAME_QUERY_COMPLETE) {
 			if ($request['kind'] === 'query') {
-				strlen($payload) >= 16 || throw new ProtocolException('Ink returned a truncated query summary.');
+				strlen($payload) >= InkCodes::QUERY_COMPLETE_SIZE || throw new ProtocolException('Ink returned a truncated query summary.');
 				$request['count'] = IwpUtils::uint64($payload, 0);
 				$request['time'] = IwpUtils::uint64($payload, 8);
 				$result = new QueryResult($request['columns'], $request['rows'], $request['count'], $request['time']);
@@ -259,23 +260,23 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 
 	private function handleAuthenticationFrame(int $type, string $payload) : void
 	{
-		if ($type === 0x05) {
+		if ($type === InkCodes::FRAME_AUTH_FAIL) {
 			$error = IwpUtils::remoteError($payload);
 			$this->connectDeferred?->reject($error);
 			$this->connectDeferred = null;
 			$this->connection?->close();
 			return;
 		}
-		if ($type === 0x02) {
-			strlen($payload) >= 68 || throw new ProtocolException('Ink sent an invalid authentication challenge.');
-			$databaseId = substr($payload, 0, 16);
-			$nonce = substr($payload, 16, 32);
-			$sessionId = substr($payload, 48, 16);
-			$digest = IwpUtils::blake3('INK-AUTH-v1' . $databaseId . $nonce . $sessionId . str_repeat("\0", 32));
-			$this->writeFrame(0x03, 0, $sessionId . sodium_crypto_sign_detached($digest, $this->secretKey()));
+		if ($type === InkCodes::FRAME_CHALLENGE) {
+			strlen($payload) >= InkCodes::CHALLENGE_MIN_SIZE || throw new ProtocolException('Ink sent an invalid authentication challenge.');
+			$databaseId = substr($payload, 0, InkCodes::DATABASE_ID_SIZE);
+			$nonce = substr($payload, InkCodes::DATABASE_ID_SIZE, InkCodes::NONCE_SIZE);
+			$sessionId = substr($payload, InkCodes::DATABASE_ID_SIZE + InkCodes::NONCE_SIZE, InkCodes::SESSION_ID_SIZE);
+			$digest = IwpUtils::blake3(InkCodes::AUTH_DIGEST_PREFIX . $databaseId . $nonce . $sessionId . str_repeat("\0", InkCodes::AUTH_DIGEST_ZERO_PAD_LENGTH));
+			$this->writeFrame(InkCodes::FRAME_AUTH_RESP, InkCodes::HANDSHAKE_STREAM_ID, $sessionId . sodium_crypto_sign_detached($digest, $this->secretKey()));
 			return;
 		}
-		$type === 0x04 && strlen($payload) >= 20 || throw new ProtocolException('Ink rejected or malformed the authentication response.');
+		$type === InkCodes::FRAME_AUTH_OK && strlen($payload) >= InkCodes::AUTH_OK_MIN_SIZE || throw new ProtocolException('Ink rejected or malformed the authentication response.');
 		$this->authenticated = true;
 		$deferred = $this->connectDeferred;
 		$this->connectDeferred = null;
@@ -295,9 +296,9 @@ final class AsyncInkTcpDriver implements AsyncDriverInterface
 		} catch (Throwable $error) {
 			throw new ConnectionException("Unable to read Ink key file '{$path}'.", 0, $error);
 		}
-		if (strlen($content) !== 32) {
+		if (strlen($content) !== InkCodes::ED25519_SEED_SIZE) {
 			$decoded = hex2bin(trim($content));
-			$decoded !== false && strlen($decoded) === 32 || throw new ConnectionException('Ink key must contain a 32-byte raw seed or a 64-character hexadecimal seed.');
+			$decoded !== false && strlen($decoded) === InkCodes::ED25519_SEED_SIZE || throw new ConnectionException('Ink key must contain a ' . InkCodes::ED25519_SEED_SIZE . '-byte raw seed or a ' . InkCodes::ED25519_SEED_HEX_LENGTH . '-character hexadecimal seed.');
 			$content = $decoded;
 		}
 		$pair = sodium_crypto_sign_seed_keypair($content);
